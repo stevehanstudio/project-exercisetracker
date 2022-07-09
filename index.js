@@ -49,6 +49,15 @@ app.get('/', (req, res) => {
 
 app.use(express.urlencoded())
 
+app.get('/api/users', async (req,res) => {
+  try {
+    users = await User.find({}).select({ "username": 1, "_id": 1})
+    res.status(200).json(users)
+  } catch(err) {
+    return res.status(401).json({ error: "No user found"})
+  }
+})
+
 app.post('/api/users', async (req, res) => {
   // console.log('In /api/users')
   // console.log(req.body.username)
@@ -62,7 +71,7 @@ app.post('/api/users', async (req, res) => {
     })
     const savedUser = await newUser.save()
     return res.status(200).json({
-      id: savedUser._id,
+      _id: savedUser._id,
       username: savedUser.username,
     })
   }
@@ -72,10 +81,32 @@ app.post('/api/users', async (req, res) => {
   }
 })
 
+app.get('/api/users/:_id/exercises', async (req, res) => {
+	console.log('In get /api/users/:_id/exercises')
+	const { _id } = req.params
+	try {
+		// const { description, duration, date } = req.body
+		// const exercise = {
+		// 	description,
+		// 	duration,
+		// 	date: new Date(date).toDateString(),
+		// }
+
+		// console.log('exercise to get:', exercise)
+		const user = await User.findById(_id)
+		console.log('Found user:', user)
+
+		return res.status(200).json(user)
+	} catch (err) {
+		console.log('Error getting /api/users/:_id/exercises', err)
+		return res.json({ error: err })
+	}
+})
+
 app.post('/api/users/:_id/exercises', async (req, res) => {
-	// console.log('In /api/users/:_id/exercises')
-	// console.log(req.body)
-	// console.log(req.params._id)
+	console.log('In post /api/users/:_id/exercises')
+	// console.log('req.body', req.body)
+	// console.log('req.params._id', req.params._id)
 	const { _id } = req.params
 	try {
 		const { description, duration, date } = req.body
@@ -85,14 +116,20 @@ app.post('/api/users/:_id/exercises', async (req, res) => {
 			date: (new Date(date)).toDateString()
 		}
 
-		// console.log('exercise:', exercise)
+		console.log('exercise to get:', exercise)
 		const user = await User.findById(_id)
-    // console.log('user:', user)
+    console.log('Found user:', user)
     user.count = user.count+1,
     user.log.push(exercise)
     const updatedUser = await user.save()
 
-    return res.status(200).json(updatedUser)
+    return res.status(200).json({
+      username: user.username,
+      description: exercise.description,
+      duration: exercise.duration,
+      date: exercise.date,
+      _id: user._id
+    })
 	} catch (err) {
 		console.log('Error posting to /api/users/:_id/exercises', err)
 		return res.json({ error: err })
@@ -109,7 +146,35 @@ app.get('/api/users/:_id/logs', async (req, res) => {
   try {
     const { _id } = req.params
     const { from, to, limit } = req.query
-    user = await User.findById(_id)
+    let user
+    if (from && to && limit) {
+			user = await User.find({
+        _id: _id,
+        "log": {
+          "$gte": new Date(from),
+          "$lte": new Date(to)
+        }
+				.limit(+limit)
+				.exec()
+      })
+		} else if (from && to && !limit) {
+			user = await User.find({
+        _id: _id,
+        "log": {
+          "$gte": new Date(from),
+          "$lte": new Date(to)
+        }
+      })
+		} else if (from && !to && !limit) {
+			user = await User.findById({
+        _id: _id,
+        "log": {
+          "$gte": new Date(from)
+        }
+      })
+		} else {
+      user = await User.findById(_id)
+    }
     return res.json(user)
   } catch (err) {
     console.log(err)
