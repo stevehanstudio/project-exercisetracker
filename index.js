@@ -47,7 +47,7 @@ app.get('/', (req, res) => {
   res.sendFile(__dirname + '/views/index.html')
 });
 
-app.use(express.urlencoded())
+app.use(express.urlencoded({ extended: true }))
 
 app.get('/api/users', async (req,res) => {
   try {
@@ -110,10 +110,11 @@ app.post('/api/users/:_id/exercises', async (req, res) => {
 	const { _id } = req.params
 	try {
 		const { description, duration, date } = req.body
+    console.log('req.body', description, duration, date)
     const exercise = {
 			description,
-			duration,
-			date: (new Date(date)).toDateString()
+			duration: +duration,
+			date: date ? (new Date(date)).toDateString() : (new Date()).toDateString()
 		}
 
 		console.log('exercise to get:', exercise)
@@ -123,12 +124,14 @@ app.post('/api/users/:_id/exercises', async (req, res) => {
     user.log.push(exercise)
     const updatedUser = await user.save()
 
+    // return res.json(updatedUser)
+
     return res.status(200).json({
-      username: user.username,
+      username: updatedUser.username,
       description: exercise.description,
-      duration: exercise.duration,
+      duration: +exercise.duration,
       date: exercise.date,
-      _id: user._id
+      _id: updatedUser._id
     })
 	} catch (err) {
 		console.log('Error posting to /api/users/:_id/exercises', err)
@@ -136,50 +139,84 @@ app.post('/api/users/:_id/exercises', async (req, res) => {
 	}
 })
 
+// Modify the queryChain function to find people who like the food specified by the variable named foodToSearch. Sort them by name, limit the results to two documents, and hide their age. Chain .find(), .sort(), .limit(), .select(), and then .exec(). Pass the done(err, data) callback to exec().
 // GET user's exercise log: GET /api/users/:_id/logs?[from][&to][&limit]
 // [ ] = optional
 // from, to = dates (yyyy-mm-dd); limit = number
 app.get('/api/users/:_id/logs', async (req, res) => {
-  // console.log('In /api/users/:_id/logs')
-  // console.log(req.params)
-  // console.log('req.query', req.query)
+  console.log('In /api/users/:_id/logs')
+  console.log(req.params)
+  console.log('req.query', req.query)
+
+  const { _id } = req.params
+  let { from, to, limit } = req.query
+
   try {
-    const { _id } = req.params
-    const { from, to, limit } = req.query
-    let user
-    if (from && to && limit) {
-			user = await User.find({
-        _id: _id,
-        "log": {
-          "$gte": new Date(from),
-          "$lte": new Date(to)
-        }
-				.limit(+limit)
-				.exec()
-      })
-		} else if (from && to && !limit) {
-			user = await User.find({
-        _id: _id,
-        "log": {
-          "$gte": new Date(from),
-          "$lte": new Date(to)
-        }
-      })
-		} else if (from && !to && !limit) {
-			user = await User.findById({
-        _id: _id,
-        "log": {
-          "$gte": new Date(from)
-        }
-      })
-		} else {
-      user = await User.findById(_id)
+    const user = await User.findById(_id)
+    // if (!from && !to && !limit) {
+    //   return res.status(200).json(user)
+    // }
+    if (!from) {
+      from = '1970-01-01'
     }
-    return res.json(user)
-  } catch (err) {
-    console.log(err)
+		if (!to) {
+      const today = new Date()
+      const tomorrow = new Date(today)
+      tomorrow.setDate(tomorrow.getDate() + 1)
+      to = tomorrow
+      console.log(today, to)
+      to = to.toISOString()
+      console.log('toISOString', to)
+    }
+		if (!limit) {
+      limit = user.count
+    }
+
+    console.log('user', user)
+    const exercises = user.log.filter(exercise => {
+      const exercise_date = new Date(exercise.date)
+      const from_date = new Date(from).getTime()
+      const to_date = new Date(to).getTime()
+
+      console.log(`exercise.date=${exercise.date}, from_date=${from_date}, to_date=${to_date}`)
+      return (
+        exercise_date.getTime() >= from_date &&
+        exercise_date.getTime() <= to_date
+      )
+    }).map(exercise => {
+      return {
+        description: exercise.description,
+        duration: exercise.duration,
+        date: exercise.date
+        // date: new Date(exercise.date).toDateString()
+      }
+    })
+    const queried_log = exercises.slice(0, limit)
+    const queried_user = {
+			username: user.username,
+			count: user.count, // queried_log.length,
+			_id: user._id,
+			log: queried_log,
+		}
+    console.log('queried_user', queried_user)
+    return res.json(queried_user)
+  }
+  catch (err) {
+    console.log("Error:", err);
     return res.status(401).json({ error: 'invalid user'})
   }
+
+  // else {
+  //   const user = User.findById(_id)
+  //     .where('log.date').gte(new Date(from)).lte(new Date(to))
+  //     .sort('log.date')
+  //     .limit(limit)
+  //     .exec((err, result) => {
+  //       if (err) {
+  //         console.log('Error', err)
+  //       } else {
+  //   })
+//  }
 })
 
 const listener = app.listen(process.env.PORT || 3000, () => {
